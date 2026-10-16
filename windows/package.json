@@ -1,0 +1,56 @@
+{
+  "name": "desktop-clothesline",
+  "productName": "桌面晾衣杆",
+  "version": "0.1.0",
+  "description": "Desktop clothesline for screenshots and text notes",
+  "author": "hzhu9367-debug",
+  "license": "MIT",
+  "main": "main.cjs",
+  "scripts": {
+    "build": "esbuild renderer.js --bundle --format=iife --outfile=renderer.bundle.js",
+    "start": "npm run build && electron .",
+    "test": "node --test test/*.test.cjs",
+    "dist:win": "npm run build && electron-builder --win nsis --x64 --publish never"
+  },
+  "dependencies": {
+    "chokidar": "4.0.3",
+    "lucide": "0.468.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "electron": "44.7.2",
+    "electron-builder": "26.15.3",
+    "esbuild": "0.25.12"
+  },
+  "build": {
+    "appId": "com.hzhu9367.desktopclothesline",
+    "toolsets": {"nsis": "1.2.1"},
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.cjs",
+      "model.cjs",
+      "preload.cjs",
+      "index.html",
+      "style.css",
+      "renderer.bundle.js",
+      "assets/**/*",
+      "LICENSE"
+    ],
+    "extraFiles": [{"from": "README.md", "to": "使用说明.txt"}, {"from": "LICENSE", "to": "LICENSE.txt"}],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico",
+      "signExecutable": false,
+      "artifactName": "桌面晾衣杆-Windows-0.1.0-测试版-Setup.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

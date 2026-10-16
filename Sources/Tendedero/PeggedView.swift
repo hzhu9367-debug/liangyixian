@@ -16,7 +16,11 @@ struct PeggedView: View {
     private var pressed: Bool { line.pressedID == item.id }
     private var replacing: Bool { line.replacementPendingID != nil }
     private var effectiveScale: CGFloat {
-        hovering ? min(1.08, max(1, displayScale * 1.45)) : displayScale
+        hovering ? Self.hoverScale(for: displayScale) : displayScale
+    }
+
+    static func hoverScale(for scale: CGFloat) -> CGFloat {
+        min(1.08, max(1, scale * 1.45))
     }
 
     var body: some View {
@@ -24,7 +28,7 @@ struct PeggedView: View {
             Clothespin()
                 .zIndex(1)
             card
-                .offset(x: Self.cardHorizontalOffset(for: item))
+                .offset(x: Self.cardHorizontalOffset(for: item), y: Self.cardVerticalOffset(for: item))
         }
         .rotationEffect(.degrees(swing + Self.restingTilt(for: item)), anchor: .top)
         .scaleEffect(effectiveScale, anchor: .top)
@@ -64,17 +68,26 @@ struct PeggedView: View {
     }
 
     static func restingTilt(for item: Pegged) -> Double {
-        item.tilt + (hangsFromHandle(item) ? -18 :
+        if let custom = item.noteStyle?.hangingLayout { return custom.tilt }
+        return item.tilt + (hangsFromHandle(item) ? -18 :
             (item.note != nil && item.noteStyle == .screwdriver ? 12 : 0))
     }
 
     static func hasCustomHanging(_ item: Pegged) -> Bool {
-        hangsFromHandle(item) || (item.note != nil && item.noteStyle == .screwdriver)
+        hangsFromHandle(item) || (item.note != nil && (item.noteStyle == .screwdriver || item.noteStyle?.hangingLayout != nil))
     }
 
     static func cardHorizontalOffset(for item: Pegged) -> CGFloat {
+        if let custom = item.noteStyle?.hangingLayout {
+            return photoSize(for: item.thumb.size).width * (0.5 - custom.clipX)
+        }
         // The right handle is at 66% of the original thumbnail canvas.
-        hangsFromHandle(item) ? -photoSize(for: item.thumb.size).width * 0.16 : 0
+        return hangsFromHandle(item) ? -photoSize(for: item.thumb.size).width * 0.16 : 0
+    }
+
+    static func cardVerticalOffset(for item: Pegged) -> CGFloat {
+        guard let custom = item.noteStyle?.hangingLayout else { return 0 }
+        return -photoSize(for: item.thumb.size).height * custom.clipY
     }
 
     private var photoSize: CGSize { Self.photoSize(for: item.thumb.size) }
@@ -114,7 +127,7 @@ struct PeggedView: View {
             .opacity(dragging ? 0.45 : 1)
             .overlay(alignment: .topLeading) {
                 // Drawn here, clicked through GrabView, which sits on top.
-                Image(systemName: "minus")
+                Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(.primary)
                     .frame(width: 20, height: 20)

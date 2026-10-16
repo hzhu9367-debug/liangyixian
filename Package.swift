@@ -9,6 +9,8 @@ let package = Package(
                           resources: [.copy("Resources/tomato.png"), .copy("Resources/bear.png"),
                                       .copy("Resources/tote.png"), .copy("Resources/paperbag.png"),
                                       .copy("Resources/clock.png"), .copy("Resources/screwdriver.png"),
-                                      .copy("Resources/hammer.png")])
+                                      .copy("Resources/hammer.png"), .copy("Resources/bucket.png"),
+                                      .copy("Resources/sweetbaby.png"), .copy("Resources/kissbaby.png"),
+                                      .copy("Resources/wangyibo.png")])
     ]
 )

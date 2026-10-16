@@ -11,6 +11,9 @@ final class ScreenshotWatcher {
     private var known = Set<String>()
     private var source: DispatchSourceFileSystemObject?
     private var pending: DispatchWorkItem?
+    private let queue = DispatchQueue(label: "app.tendedero.screenshot-watcher", qos: .utility)
+    // Accessed only on the main queue; stale background scans cannot deliver captures.
+    private var activeID: UUID?
     private let onNew: (URL) -> Void
     private let onChange: () -> Void
 
@@ -48,11 +51,17 @@ final class ScreenshotWatcher {
     private let launchDate = Date()
 
     func start() {
+        let id = UUID()
+        activeID = id
+        queue.async { [weak self] in self?.startWatching(id: id) }
+    }
+
+    private func startWatching(id: UUID) {
+        pending?.cancel()
+        source?.cancel()
         let files = listing()
         known = Set(files.filter { creationDate($0) < launchDate }.map(\.path))
-        for url in files where !known.contains(url.path) && isCandidate(url) {
-            onNew(url)
-        }
+        deliver(files.filter { !known.contains($0.path) && isCandidate($0) }, id: id)
         known = Set(files.map(\.path))
         let fd = open(folder.path, O_EVTONLY)
         guard fd >= 0 else {
@@ -60,34 +69,42 @@ final class ScreenshotWatcher {
             return
         }
         let src = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fd, eventMask: [.write, .rename, .delete], queue: .main)
-        src.setEventHandler { [weak self] in self?.scheduleScan() }
+            fileDescriptor: fd, eventMask: [.write, .rename, .delete], queue: queue)
+        src.setEventHandler { [weak self] in self?.scheduleScan(id: id) }
         src.setCancelHandler { close(fd) }
         src.resume()
         source = src
     }
 
     func stop() {
-        pending?.cancel()
-        source?.cancel()
-        source = nil
+        activeID = nil
+        queue.async { [weak self] in
+            self?.pending?.cancel()
+            self?.source?.cancel()
+            self?.source = nil
+        }
     }
 
-    private func scheduleScan() {
+    private func scheduleScan(id: UUID) {
         pending?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.scan() }
+        let work = DispatchWorkItem { [weak self] in self?.scan(id: id) }
         pending = work
         // macOS writes a hidden temp file and renames it; give it a moment.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
+        queue.asyncAfter(deadline: .now() + 0.2, execute: work)
     }
 
-    private func scan() {
+    private func scan(id: UUID) {
         let files = listing()
-        for url in files where !known.contains(url.path) && isCandidate(url) {
-            onNew(url)
-        }
+        deliver(files.filter { !known.contains($0.path) && isCandidate($0) }, id: id, changed: true)
         known = Set(files.map(\.path))
-        onChange()
+    }
+
+    private func deliver(_ files: [URL], id: UUID, changed: Bool = false) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.activeID == id else { return }
+            files.forEach(self.onNew)
+            if changed { self.onChange() }
+        }
     }
 
     private func listing() -> [URL] {

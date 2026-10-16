@@ -2,23 +2,26 @@ import SwiftUI
 
 struct ToggleButton: View {
     @ObservedObject var line: Line
-    let action: () -> Void
+    let modeAction: (Bool) -> Void
     let noteAction: () -> Void
 
     var body: some View {
-        LineToolbar(staysOpen: line.staysOpen, action: action, noteAction: noteAction)
+        LineToolbar(staysOpen: line.staysOpen, modeAction: modeAction, noteAction: noteAction)
             .frame(width: TogglePanel.panelSize.width, height: TogglePanel.panelSize.height, alignment: .top)
+            .offset(y: line.revealed ? 0 : -(Layout.panelHeight + 12))
+            .animation(line.revealed ? .spring(response: 0.42, dampingFraction: 0.82)
+                                     : .easeIn(duration: 0.22), value: line.revealed)
     }
 }
 
 struct LineToolbar: View {
     let staysOpen: Bool
-    let action: () -> Void
+    let modeAction: (Bool) -> Void
     let noteAction: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            Button(action: action) {
+            Button(action: chooseMode) {
                 VStack(spacing: -10) {
                     Clothespin().zIndex(1)
                     Image(systemName: staysOpen ? "pin.fill" : "pin")
@@ -31,11 +34,11 @@ struct LineToolbar: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(ToolCharmStyle(tilt: 4))
-            .accessibilityLabel(L("Keep line open", "Fijar tendedero", "保持晾衣线展开"))
-            .accessibilityValue(staysOpen ? L("On", "Activado", "已开启") : L("Off", "Desactivado", "已关闭"))
-            .help(staysOpen
-                  ? L("Click to hide the clothesline", "Pulsa para ocultar el tendedero", "点击收起晾衣线")
-                  : L("Click to keep the clothesline open", "Pulsa para fijar el tendedero", "点击后保持晾衣线展开"))
+            .accessibilityLabel(L("Display mode", "Modo de visualización", "显示模式"))
+            .accessibilityValue(staysOpen
+                ? L("Always visible", "Siempre visible", "始终显示")
+                : L("Show on top hover", "Mostrar al acercar al borde superior", "顶部悬停显示"))
+            .help(L("Display mode", "Modo de visualización", "显示模式"))
 
             Button(action: noteAction) {
                 VStack(spacing: -10) {
@@ -57,6 +60,17 @@ struct LineToolbar: View {
             .accessibilityLabel(L("New note", "Nueva nota", "新建便签"))
             .help(L("Create a text note", "Crear una nota de texto", "新建文字便签"))
         }
+    }
+
+    private func chooseMode() {
+        let menu = NSMenu(title: L("Display mode", "Modo de visualización", "显示模式"))
+        for (value, title) in [(true, L("Always visible", "Siempre visible", "始终显示")),
+                               (false, L("Show on top hover", "Mostrar al acercar al borde superior", "顶部悬停显示"))] {
+            let item = ClosureMenuItem(title) { modeAction(value) }
+            item.state = staysOpen == value ? .on : .off
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 }
 

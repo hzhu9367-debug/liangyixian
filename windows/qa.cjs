@@ -1,0 +1,41 @@
+const { _electron: electron } = require('@playwright/test');
+const assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
+(async()=>{
+  fs.mkdirSync(path.join(__dirname,'qa-output'),{recursive:true});
+  const app=await electron.launch({args:[__dirname,'--qa'],...(process.env.CLOTH_QA_ELECTRON?{executablePath:process.env.CLOTH_QA_ELECTRON}:{}),timeout:45000});
+  const errors=[];
+  app.on('window',page=>page.on('pageerror',error=>errors.push(error.message)));
+  try{
+    const line=await app.firstWindow();await line.waitForSelector('#rack',{state:'attached'});
+    const invoke=(action,payload={})=>line.evaluate(({action,payload})=>window.clothesline.invoke(action,payload),{action,payload});
+    await invoke('mode',{mode:'always'});
+    let s=await invoke('state');
+    for(const item of [...s.items,...s.pending])await invoke('stow',{id:item.id});
+    const next=app.waitForEvent('window');await invoke('note');const note=await next;await note.waitForSelector('#note-text');
+    await note.locator('#note-text').fill('多行便签\nWindows 也能用\n第一版测试');
+    await note.locator('[data-id="tomato"]').click();await note.screenshot({path:path.join(__dirname,'qa-output','note.png')});
+    await note.getByRole('button',{name:'挂上晾衣杆'}).click();
+    await line.waitForSelector('.peg');
+    s=await invoke('state');assert.equal(s.items[0].text,'多行便签\nWindows 也能用\n第一版测试');
+    assert.equal(s.items[0].style,'tomato');
+    await invoke('pin',{id:s.items[0].id});s=await invoke('state');assert.equal(s.items[0].pinned,true);
+    await invoke('stow',{id:s.items[0].id});await invoke('undo');s=await invoke('state');assert.equal(s.items[0].pinned,true);
+    const imported=await invoke('drop-images',{paths:[path.join(__dirname,'assets','paperbag.png')]});assert.equal(imported.ok,true);
+    await line.waitForSelector('.peg:nth-child(2)');
+    await line.waitForFunction(()=>{const c=document.querySelector('.peg canvas'),d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;return d.some((v,i)=>i%4===3&&v>0);});
+    for(let i=0;i<s.capacity;i++)await invoke('save-note',{text:`排队测试 ${i}`,style:'tote'});
+    s=await invoke('state');assert.equal(s.items.length,s.capacity);assert.ok(s.pending.length>=2);assert.equal(s.items[0].pinned,true);
+    const rejected=await invoke('replace',{id:s.items[0].id,next:s.pending[0].id});assert.equal(rejected.ok,false);
+    const old=s.items[1].id,newId=s.pending[0].id;await invoke('replace',{id:old,next:newId});await invoke('undo');s=await invoke('state');assert.equal(s.items[1].id,old);assert.equal(s.pending[0].id,newId);
+    await line.screenshot({path:path.join(__dirname,'qa-output','line.png')});
+    const queuePromise=app.waitForEvent('window');await invoke('queue');const queue=await queuePromise;await queue.waitForSelector('.queue-row');await queue.screenshot({path:path.join(__dirname,'qa-output','queue.png')});
+    const workshopPromise=app.waitForEvent('window');await invoke('workshop');const workshop=await workshopPromise;await workshop.waitForSelector('#workshop-preview');
+    const art=`cloth://asset/${s.items.find(i=>i.type==='image').file}`;
+    const saved=await invoke('save-style',{name:'测试底图',art,rect:[30,35,70,45],clipX:.6,clipY:.04,fontSize:13,color:'#282a30',align:'center',tilt:8});assert.equal(typeof saved,'string');
+    await workshop.getByRole('button',{name:'测试底图',exact:true}).last().click();await workshop.waitForTimeout(200);await workshop.screenshot({path:path.join(__dirname,'qa-output','workshop.png')});
+    const rect=await workshop.locator('#text-region').boundingBox();assert.ok(rect.width>100&&rect.height>100);
+    await invoke('mode',{mode:'auto'});s=await invoke('state');assert.equal(s.mode,'auto');
+    await app.evaluate(({screen})=>screen.getPrimaryDisplay());
+    assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,items:s.items.length,pending:s.pending.length,styles:s.styles.length,rendererErrors:errors}));
+  }finally{await app.close();}
+})().catch(error=>{console.error(error);process.exitCode=1;});

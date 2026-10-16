@@ -9,7 +9,7 @@ import SwiftUI
 /// - The Trash discards it.
 /// - Nowhere that accepts it: the photo flies back to the line.
 ///
-/// Click copies, press and hold opens Markup, the corner cross discards.
+/// Click copies, press and hold opens Markup, the corner cross removes the card while keeping its file.
 struct GrabArea: NSViewRepresentable {
     let item: Pegged
     let line: Line
@@ -60,7 +60,7 @@ struct GrabArea: NSViewRepresentable {
             if item.note != nil {
                 menu.addItem(ClosureMenuItem(L("Edit note", "Editar nota", "编辑便签")) { line.editNote(id) })
                 menu.addItem(.separator())
-                menu.addItem(ClosureMenuItem(L("Take down (keep file)", "Descolgar (conservar archivo)", "收起（保留文件）")) { line.stow(id) })
+                menu.addItem(ClosureMenuItem(L("Remove from line (keep file)", "Quitar del tendedero (conservar archivo)", "移除（保留文件）")) { line.stow(id) })
                 menu.addItem(ClosureMenuItem(L("Move to Trash", "Mover a la Papelera", "移到废纸篓")) { line.trash(id) })
                 return menu
             }
@@ -72,7 +72,7 @@ struct GrabArea: NSViewRepresentable {
                 menu.addItem(ClosureMenuItem(L("Save to Desktop", "Guardar en el Escritorio", "保存到桌面")) { line.saveToDesktop(id) })
             }
             menu.addItem(.separator())
-            menu.addItem(ClosureMenuItem(L("Take down (keep file)", "Descolgar (conservar archivo)", "收起（保留文件）")) { line.stow(id) })
+            menu.addItem(ClosureMenuItem(L("Remove from line (keep file)", "Quitar del tendedero (conservar archivo)", "移除（保留文件）")) { line.stow(id) })
             menu.addItem(ClosureMenuItem(L("Move to Trash", "Mover a la Papelera", "移到废纸篓")) { line.trash(id) })
             return menu
         }

@@ -48,7 +48,7 @@ struct LineView: View {
     var body: some View {
         GeometryReader { geo in
             let width = geo.size.width
-            let reserve = Layout.trailingReserve(hasAuxiliary: !line.pending.isEmpty || !line.recentStowed.isEmpty)
+            let reserve = Layout.trailingReserve(hasAuxiliary: !line.pending.isEmpty)
             let scale = Layout.scale(count: line.items.count, width: width, trailingReserve: reserve)
             ZStack(alignment: .topLeading) {
                 Rope(width: width)
@@ -72,11 +72,6 @@ struct LineView: View {
                 if !line.pending.isEmpty {
                     PendingStack(line: line)
                         .position(x: width - 63, y: 83)
-                        .zIndex(2000)
-                        .transition(.scale(scale: 0.8).combined(with: .opacity))
-                } else if !line.recentStowed.isEmpty {
-                    RecentStack(line: line)
-                        .position(x: width - 67, y: 68)
                         .zIndex(2000)
                         .transition(.scale(scale: 0.8).combined(with: .opacity))
                 }
@@ -110,36 +105,6 @@ struct LineView: View {
         .onPreferenceChange(HitRectsKey.self) { rects in
             line.hitRects = rects
         }
-    }
-}
-
-private struct RecentStack: View {
-    @ObservedObject var line: Line
-
-    var body: some View {
-        Label(L("Recent \(line.recentStowed.count)",
-                "Recientes \(line.recentStowed.count)",
-                "最近收起 \(line.recentStowed.count)"),
-              systemImage: "clock.arrow.circlepath")
-            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-            .lineLimit(1)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .glassFrame(capsule: true)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                guard let first = line.recentStowed.first else { return }
-                line.restoreRecent(first.id)
-            }
-            .help(L("Restore the most recently taken down item",
-                    "Restaurar el elemento descolgado más reciente",
-                    "恢复最近收起的一项"))
-            .background(
-                GeometryReader { g in
-                    Color.clear.preference(key: HitRectsKey.self,
-                                           value: [line.recentHitID: g.frame(in: .global)])
-                }
-            )
     }
 }
 

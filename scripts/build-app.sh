@@ -5,8 +5,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 CONFIG="${1:-release}"
-APP="build/Tendedero.app"
-VERSION="1.0.0"
+APP="build/桌面晾衣杆.app"
+VERSION="1.1.10"
+export SWIFTPM_MODULECACHE_OVERRIDE="$PWD/.build/module-cache"
+export CLANG_MODULE_CACHE_PATH="$PWD/.build/module-cache"
 
 # Builds one architecture and prints the binary's path.
 # The Command Line Tools for macOS 27 ship an SDK whose SwiftUI needs a macro
@@ -14,14 +16,15 @@ VERSION="1.0.0"
 # newest macOS 26 SDK installed alongside it.
 build_arch() {
   local triple="$1-apple-macosx14.0"
-  if [ -z "${SDKROOT:-}" ] && ! swift build -c "$CONFIG" --triple "$triple" >&2; then
+  local scratch=".build/package-$1"
+  if [ -z "${SDKROOT:-}" ] && ! swift build -c "$CONFIG" --scratch-path "$scratch" --triple "$triple" >&2; then
     FALLBACK="$(ls -d /Library/Developer/CommandLineTools/SDKs/MacOSX26*.sdk 2>/dev/null | sort -V | tail -1)"
     if [ -z "$FALLBACK" ]; then exit 1; fi
     echo "Retrying with $FALLBACK" >&2
     export SDKROOT="$FALLBACK"
   fi
-  if [ -n "${SDKROOT:-}" ]; then swift build -c "$CONFIG" --triple "$triple" >&2; fi
-  cp "$(swift build -c "$CONFIG" --triple "$triple" --show-bin-path)/Tendedero" "$OUT/Tendedero-$1"
+  if [ -n "${SDKROOT:-}" ]; then swift build -c "$CONFIG" --scratch-path "$scratch" --triple "$triple" >&2; fi
+  cp "$(swift build -c "$CONFIG" --scratch-path "$scratch" --triple "$triple" --show-bin-path)/Tendedero" "$OUT/Tendedero-$1"
 }
 
 # A universal binary, so it runs on Apple silicon and on Intel Macs, from
@@ -36,10 +39,12 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Tendedero"
 ditto Sources/Tendedero/Resources "$APP/Contents/Resources"
+cp LICENSE "$APP/Contents/Resources/LICENSE.txt"
 
 # Icon
 WORK="$(mktemp -d)"
-swift scripts/make-icon.swift "$WORK/icon.png"
+# Use the project's own icon for redistribution.
+cp windows/assets/icon.png "$WORK/icon.png"
 ICONSET="$WORK/Tendedero.iconset"
 mkdir -p "$ICONSET"
 for s in 16 32 128 256 512; do
@@ -54,14 +59,14 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Tendedero</string>
-  <key>CFBundleDisplayName</key><string>Tendedero</string>
+  <key>CFBundleName</key><string>桌面晾衣杆</string>
+  <key>CFBundleDisplayName</key><string>桌面晾衣杆</string>
   <key>CFBundleIdentifier</key><string>app.tendedero.Tendedero</string>
   <key>CFBundleExecutable</key><string>Tendedero</string>
   <key>CFBundleIconFile</key><string>Tendedero</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleVersion</key><string>12</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>

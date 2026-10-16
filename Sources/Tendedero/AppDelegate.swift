@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var undoHotKey: HotKey?
     private var cancellables = Set<AnyCancellable>()
     private var mouseTimer: Timer?
+    private var presentationRetries: [DispatchWorkItem] = []
 
     /// Whether the panel is ordered in. It can be in and still tucked away
     /// above the top edge, like an auto-hiding Dock.
@@ -55,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         dragReorder = LineDragReorder(line: line, panel: panel)
         panel.placeOnScreen()
         let toggleHost = NSHostingView(rootView: ToggleButton(line: line,
-                                                              action: { [weak self] in self?.toggle() },
+                                                              modeAction: { [weak self] in self?.setDisplayMode(alwaysVisible: $0) },
                                                               noteAction: { [weak self] in self?.line.createNote() }))
         togglePanel = TogglePanel(content: toggleHost)
         togglePanel.ensureVisible(on: panel.screen)
@@ -79,15 +80,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setUpStatusItem()
         watchMenuBarClicks()
 
-        if line.staysOpen {
-            keepOpen = true
-            wanted = true
-            refresh()
-            reveal(pinned: true)
-        }
+        setDisplayMode(alwaysVisible: line.staysOpen)
 
         Markup.shared.onSaved = { [weak self] url in self?.line.reloadThumbnail(for: url) }
         line.onFall = { [weak self] item in self?.fall(item) }
+        NotificationCenter.default.addObserver(forName: CustomStyleStore.changed, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.line.refreshCustomStyles() }
+        }
 
         line.$items
             .receive(on: RunLoop.main)
@@ -106,14 +105,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .sink { [weak self] _ in self?.updateUndoHotKey() }
             .store(in: &cancellables)
 
-        // Entering or leaving full screen switches Space. Check again once the
-        // switch animation has settled.
+        // The window server may finish moving Spaces after the notification.
         let workspace = NSWorkspace.shared.notificationCenter
-        for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.didActivateApplicationNotification] {
+        for name in [NSWorkspace.activeSpaceDidChangeNotification,
+                     NSWorkspace.didActivateApplicationNotification,
+                     NSWorkspace.didWakeNotification,
+                     NSWorkspace.screensDidWakeNotification] {
             workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
-                    self?.refresh()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { self?.refresh() }
+                    self?.restorePresentationAfterTransition()
                 }
             }
         }
@@ -125,6 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self?.panel.placeOnScreen()
                 self?.togglePanel.placeOnScreen()
                 self?.updateCapacity()
+                self?.restorePresentationAfterTransition()
             }
         }
 
@@ -141,7 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
                 guard let self, self.line.isEmpty, !self.line.staysOpen else { return }
                 self.keepOpen = false
-                self.wanted = false
+                self.setRevealed(false)
                 self.refresh()
             }
         }
@@ -226,7 +227,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else if live == 0 && waiting == 0 && !keepOpen {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
                 guard let self, self.line.isEmpty, !self.keepOpen else { return }
-                self.wanted = false
+                self.setRevealed(false)
                 self.refresh()
             }
         }
@@ -287,8 +288,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func cardFrame(for id: UUID) -> CGRect? {
         guard let index = line.items.firstIndex(where: { $0.id == id }) else { return nil }
         let width = panel.frame.width
-        let reserve = Layout.trailingReserve(hasAuxiliary: !line.pending.isEmpty || !line.recentStowed.isEmpty)
-        let scale = Layout.scale(count: line.items.count, width: width, trailingReserve: reserve)
+        let reserve = Layout.trailingReserve(hasAuxiliary: !line.pending.isEmpty)
+        let baseScale = Layout.scale(count: line.items.count, width: width, trailingReserve: reserve)
+        let scale = line.hoveredID == id ? PeggedView.hoverScale(for: baseScale) : baseScale
         let x = Layout.x(index: index, count: line.items.count, width: width,
                          trailingReserve: reserve)
         let viewTop = Layout.ropeY(x: x, width: width) - Layout.pinAbove
@@ -297,7 +299,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let size = PeggedView.photoSize(for: item.thumb.size)
             let angle = CGFloat(PeggedView.restingTilt(for: item)) * .pi / 180
             let dx = PeggedView.cardHorizontalOffset(for: item)
-            let dy = PeggedView.cardOffsetBelowTop
+            let dy = PeggedView.cardOffsetBelowTop + PeggedView.cardVerticalOffset(for: item)
             // Match the top center after rotation about the clothespin.
             let topX = x + (dx * cos(angle) - dy * sin(angle)) * scale
             let topY = viewTop + (dx * sin(angle) + dy * cos(angle)) * scale
@@ -314,23 +316,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Decides whether the panel is ordered in at all: something to show.
     private func refresh() {
-        // The controls must survive Space changes even when the line is hidden.
-        togglePanel.ensureVisible(on: panel.screen)
         if wanted {
             present()
         } else {
             dismiss()
         }
+        // Restore controls last so they remain above the line and clickable.
+        togglePanel.ensureVisible(on: panel.screen)
         // The cursor is watched while there is a line, even tucked away,
         // to notice it pushing against the top edge.
         if wanted { startMouseTracking() } else { stopMouseTracking() }
     }
 
     private func present() {
-        guard !isPresent else { return }
+        // isPresent tracks intent, not window-server ordering after a Space switch.
         isPresent = true
-        panel.alphaValue = 1
-        panel.orderFrontRegardless()
+        panel.ensureVisible(on: panel.screen)
+    }
+
+    private func restorePresentationAfterTransition() {
+        presentationRetries.forEach { $0.cancel() }
+        presentationRetries.removeAll()
+        let restore: () -> Void = { [weak self] in
+            guard let self else { return }
+            // Do not move the drop destination during an active drag.
+            guard !GrabView.isDragging else { return }
+            self.refresh()
+            if self.line.staysOpen { self.reveal(pinned: true) }
+        }
+        restore()
+        for delay in [0.3, 1.0, 2.0] {
+            let retry = DispatchWorkItem(block: restore)
+            presentationRetries.append(retry)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: retry)
+        }
     }
 
     private func dismiss() {
@@ -355,8 +374,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard on != isRevealed else { return }
         isRevealed = on
         line.revealed = on
+        togglePanel.ignoresMouseEvents = !on
         updateUndoHotKey()
         if !on {
+            line.hoveredID = nil
             pinned = false
             peekUntil = .distantPast
             panel.ignoresMouseEvents = true
@@ -364,22 +385,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func toggle() {
-        if line.staysOpen {
-            line.setStaysOpen(false)
-            keepOpen = false
-            wanted = false
-            setRevealed(false)
-            refresh()
-            return
-        }
-        line.setStaysOpen(true)
-        keepOpen = true
+        setDisplayMode(alwaysVisible: !line.staysOpen)
+    }
+
+    private func setDisplayMode(alwaysVisible: Bool) {
+        line.setStaysOpen(alwaysVisible)
+        keepOpen = alwaysVisible
+        // Auto-hide still needs an ordered panel and mouse tracking to reveal it.
         wanted = true
+        pinned = false
+        peekUntil = .distantPast
+        hotZoneSince = nil
+        awaySince = nil
         panel.placeOnScreen()
         togglePanel.placeOnScreen()
         updateCapacity()
         refresh()
-        reveal(pinned: true)
+        if alwaysVisible { reveal(pinned: true) }
+        else { setRevealed(false) }
     }
 
     private func startMouseTracking() {
@@ -416,7 +439,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 let p = NSEvent.mouseLocation
-                if let togglePanel = self.togglePanel, togglePanel.frame.contains(p) { return }
+                if self.isRevealed, let togglePanel = self.togglePanel, togglePanel.frame.contains(p) { return }
                 guard NSScreen.screens.contains(where: { Self.menuBarBand(of: $0).contains(p) }) else { return }
                 self.menuBarSuppressed = true
                 self.hotZoneSince = nil
@@ -549,14 +572,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        let toggleItem = ClosureMenuItem(line.staysOpen
-                                         ? L("Hide line", "Ocultar tendedero", "收起晾衣线")
-                                         : L("Keep line open", "Fijar tendedero", "保持晾衣线展开")) { [weak self] in
-            self?.toggle()
+        let modeItem = NSMenuItem(title: L("Display mode", "Modo de visualización", "显示模式"),
+                                  action: nil, keyEquivalent: "")
+        let modeMenu = NSMenu()
+        for (value, title) in [(true, L("Always visible", "Siempre visible", "始终显示")),
+                               (false, L("Show on top hover", "Mostrar al acercar al borde superior", "顶部悬停显示"))] {
+            let item = ClosureMenuItem(title) { [weak self] in self?.setDisplayMode(alwaysVisible: value) }
+            item.state = line.staysOpen == value ? .on : .off
+            modeMenu.addItem(item)
         }
-        toggleItem.keyEquivalent = "a"
-        toggleItem.keyEquivalentModifierMask = [.option, .shift]
-        menu.addItem(toggleItem)
+        modeItem.submenu = modeMenu
+        menu.addItem(modeItem)
 
         let noteItem = ClosureMenuItem(L("New text note…", "Nueva nota de texto…", "新建文字便签…")) { [weak self] in
             self?.line.createNote()
@@ -564,6 +590,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         noteItem.keyEquivalent = "n"
         noteItem.keyEquivalentModifierMask = [.option, .shift]
         menu.addItem(noteItem)
+        menu.addItem(ClosureMenuItem("便签工坊…") { NoteWorkshop.open() })
 
         if line.pendingCount > 0 {
             let pendingItem = ClosureMenuItem(
@@ -582,34 +609,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         undoItem.isEnabled = line.canUndo
         menu.addItem(undoItem)
 
-        let clearItem = ClosureMenuItem(L("Take everything down", "Descolgar todo", "全部收起（保留文件）")) { [weak self] in
+        let clearItem = ClosureMenuItem(L("Remove all (keep files)", "Quitar todo (conservar archivos)", "全部移除（保留文件）")) { [weak self] in
             self?.line.clear()
         }
         clearItem.isEnabled = line.liveCount > 0
         menu.addItem(clearItem)
-
-        let recentItem = NSMenuItem(title: L("Recently taken down", "Descolgados recientemente", "最近收起"),
-                                    action: nil, keyEquivalent: "")
-        let recentMenu = NSMenu()
-        if line.recentStowed.isEmpty {
-            let empty = NSMenuItem(title: L("No recent items", "No hay elementos recientes", "暂无记录"),
-                                   action: nil, keyEquivalent: "")
-            empty.isEnabled = false
-            recentMenu.addItem(empty)
-        } else {
-            for record in line.recentStowed {
-                let title = record.wasPinned ? "📌 \(record.title)" : record.title
-                recentMenu.addItem(ClosureMenuItem(title) { [weak self] in
-                    self?.line.restoreRecent(record.id)
-                })
-            }
-            recentMenu.addItem(.separator())
-            recentMenu.addItem(ClosureMenuItem(L("Clear history", "Borrar historial", "清除记录")) { [weak self] in
-                self?.line.clearRecent()
-            })
-        }
-        recentItem.submenu = recentMenu
-        menu.addItem(recentItem)
 
         let inbox = ClosureMenuItem(L("Handle screenshots", "Encargarse de las capturas")) { [weak self] in
             self?.setInbox(!Inbox.isEnabled)

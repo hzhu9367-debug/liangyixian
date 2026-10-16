@@ -22,7 +22,7 @@ final class LineDragReorder {
               line.items.contains(where: { $0.id == id && !$0.falling && !$0.flying }) else { return nil }
         let point = info.draggingLocation
         let width = panel.frame.width
-        let reserve = Layout.trailingReserve(hasAuxiliary: !line.pending.isEmpty || !line.recentStowed.isEmpty)
+        let reserve = Layout.trailingReserve(hasAuxiliary: !line.pending.isEmpty)
         guard point.y >= 0, point.y <= panel.frame.height,
               point.x >= Layout.toolbarReserve, point.x <= width - reserve else { return nil }
         let others = line.items.enumerated().filter { $0.element.id != id && !$0.element.falling }

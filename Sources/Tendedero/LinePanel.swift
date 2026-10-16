@@ -14,7 +14,8 @@ final class LinePanel: NSPanel, NSDraggingDestination {
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false
-        level = .floating
+        isFloatingPanel = true
+        level = .statusBar
         collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         hidesOnDeactivate = false
         isMovable = false
@@ -62,10 +63,16 @@ final class LinePanel: NSPanel, NSDraggingDestination {
                             width: visible.width, height: Layout.panelHeight)
         if frame != target { setFrame(target, display: true) }
     }
+
+    func ensureVisible(on screen: NSScreen?) {
+        placeOnScreen(screen)
+        alphaValue = 1
+        orderFrontRegardless()
+    }
 }
 
-/// A small always-visible control above the line. It remains available even
-/// while the line is tucked away, so the menu bar is not the only way to open it.
+/// Tool charms aligned with the rope. Their content slides away with the line
+/// and the panel passes clicks through while tucked away.
 final class TogglePanel: NSPanel {
     static let panelSize = NSSize(width: 124, height: 96)
 
@@ -81,7 +88,7 @@ final class TogglePanel: NSPanel {
         hidesOnDeactivate = false
         isMovable = false
         becomesKeyOnlyIfNeeded = true
-        ignoresMouseEvents = false
+        ignoresMouseEvents = true
         content.frame = NSRect(origin: .zero, size: Self.panelSize)
         content.autoresizingMask = [.width, .height]
         contentView = content

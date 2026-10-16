@@ -5,13 +5,29 @@
 ## 当前定制功能
 
 - 截图与文字便签单排悬挂，自动缩放，悬停放大。
-- 原图造型便签、文字自动换行、小锤子新建便签和固定展开按钮。
+- 原图造型便签、文字自动换行、小锤子新建便签和显示模式选择。截图与便签使用原来的显示大小，数量多时自动缩小，始终保持单排。
+- 小锤子与显示模式按钮随晾衣绳一起收起；顶部悬停唤出后即可使用，也可从菜单栏操作。
+- 便签工坊：导入自己的底图，调整文字区域、夹子位置、悬挂角度和文字样式。
 - 沿晾衣线拖动调整顺序，自动保存，支持撤销；拖到其他应用仍可复制。
-- 图片直接拖入、待上绳队列、图钉保护、最近收起和撤销。
-- 收起保留原文件，明确删除才移入废纸篓。
-- `Option + Shift + A` 展开或收起，`Option + Shift + N` 新建文字便签。
+- 图片直接拖入、待上绳队列、图钉保护和撤销。
+- 点击叉号仅从晾衣线移除，截图仍保留在截图文件夹（拖入图片保留在原位置），便签原文件也保留；支持撤销，不再显示“最近收起”。只有明确选择“移到废纸篓”才删除文件。
+- 点击小图钉选择“始终显示”或“顶部悬停显示”，模式会记住；`Option + Shift + A` 快速切换两种模式，`Option + Shift + N` 新建文字便签。
 
 仓库仅包含源码、构建脚本和界面素材，不包含个人截图、便签文字、登录凭据或编译产物。
+
+## 自定义便签
+
+点击晾衣线左侧的小锤子，在新建文字便签窗口中打开“便签工坊”；也可以从应用菜单直接打开。
+
+导入 PNG、JPG/JPEG、WebP、GIF、HEIC/HEIF、TIFF、BMP 等本机可读取的图片（最大 20 MB、6000 万像素）。文件选择器和实际读取使用同一份系统支持格式列表，额外格式取决于 macOS 版本。动图和多页图片取第一张作为静态底图。推荐透明背景 PNG，长边至少 600 像素；大图会自动缩小到最长边 2048 像素，透明背景会保留。
+
+拖动文字区域移动位置，拖动右下角调整大小；切到“夹子位置”后，点击或拖动底图设置夹子。设置名称、颜色、字号、对齐和角度后保存，即可在新建便签的外形列表中选择。已有样式可以从左侧列表再次编辑；移除样式不会改变已经挂上的便签。
+
+调整悬挂角度会自动切到“悬挂预览”，使用与晾衣线一致的夹点和旋转方式，完整展示图片与夹子；编辑文字或夹点时可切回对应模式。
+
+样式和底图只保存在本机的 `~/Library/Application Support/Tendedero/Styles`，无需登录，不会上传。
+
+Mac 1.1.2 修复了工坊上传及编辑卡顿：工坊和文字编辑使用非阻塞窗口，图片在后台读取，预览缓存并限制刷新频率。读取失败会保留原底图；关闭工坊后，原便签文字仍然保留。
 
 ## 本仓库构建
 
@@ -19,10 +35,14 @@
 git clone https://github.com/hzhu9367-debug/liangyixian.git
 cd liangyixian
 scripts/build-app.sh
-open build/Tendedero.app
+open "build/桌面晾衣杆.app"
 ```
 
 需要 macOS 14 或以上及 Swift 工具链。
+
+### Windows 测试版
+
+新增独立 Electron 移植版，目标为 Windows 10/11 x64。安装包无需 GitHub 登录或开发工具；使用方式、构建命令和当前限制见 [Windows 使用说明](windows/README.md)。与 Mac 版的数据不自动同步，尚未完成真实 Windows 机器上的安装、截图和全屏验证，请按测试版使用。
 
 ## 来源与素材许可
 
@@ -78,7 +98,7 @@ Rest the pointer in the menu bar and it glides down. Move away and it's gone.
 | Drag into an app | Send a copy. It stays on the line. |
 | Drag into a folder | Keep it there. It leaves the line. |
 | Click the pin | Protect an item from replacement. |
-| Click the minus | Take it down while keeping its file. |
+| Click × | Remove from the line while keeping its file. |
 | Choose Move to Trash | Delete the file explicitly. |
 | Rest the pointer in the menu bar | Bring the line down on that screen. |
 | Click anything in the menu bar | Put it away. |

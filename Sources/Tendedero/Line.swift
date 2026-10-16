@@ -24,14 +24,6 @@ struct Pegged: Identifiable, Equatable {
     }
 }
 
-struct RecentStowed: Codable, Identifiable, Equatable {
-    let id: UUID
-    let path: String
-    let date: Date
-    let wasPinned: Bool
-    let title: String
-}
-
 struct UndoNotice: Identifiable, Equatable {
     let id = UUID()
     let message: String
@@ -44,7 +36,6 @@ struct UndoNotice: Identifiable, Equatable {
 final class Line: ObservableObject {
     @Published private(set) var items: [Pegged] = []
     @Published private(set) var pending: [Pegged] = []
-    @Published private(set) var recentStowed: [RecentStowed] = []
     @Published private(set) var gust = 0
     @Published var copiedID: UUID?
     @Published var draggingID: UUID?
@@ -62,7 +53,6 @@ final class Line: ObservableObject {
     /// uses them to only catch clicks over photos and let the rest through.
     var hitRects: [UUID: CGRect] = [:]
     let pendingHitID = UUID()
-    let recentHitID = UUID()
     let undoHitID = UUID()
 
     var maxItems = 12
@@ -81,7 +71,6 @@ final class Line: ObservableObject {
     private let defaults: UserDefaults
     private let storeV2Key = "pegged.v2"
     private let pendingKey = "pending.v1"
-    private let recentKey = "recentStowed.v1"
     private var undoStack: [UndoAction] = []
     private var noticeWorkItem: DispatchWorkItem?
 
@@ -91,9 +80,9 @@ final class Line: ObservableObject {
     }
 
     private enum UndoAction {
-        case stow(item: Pegged, index: Int, recentID: UUID)
+        case stow(item: Pegged, index: Int)
         case delete(item: Pegged, index: Int, originalURL: URL, trashURL: URL)
-        case replace(old: Pegged, index: Int, new: Pegged, recentID: UUID)
+        case replace(old: Pegged, index: Int, new: Pegged)
         case reorder(id: UUID, index: Int)
     }
     private static let notesFolder = FileManager.default.urls(
@@ -210,7 +199,13 @@ final class Line: ObservableObject {
     }
 
     func createNote() {
-        guard let draft = TextNoteEditor.prompt() else { return }
+        TextNoteEditor.prompt { [weak self] draft in
+            guard let self, let draft else { return }
+            self.createNote(draft)
+        }
+    }
+
+    private func createNote(_ draft: TextNoteDraft) {
         let folder = Self.notesFolder
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -339,9 +334,8 @@ final class Line: ObservableObject {
         var new = pending.remove(at: pendingIndex)
         new.flying = false
         items[oldIndex] = new
-        let recentID = addRecent(old)
         replacementPendingID = nil
-        pushUndo(.replace(old: old, index: oldIndex, new: new, recentID: recentID),
+        pushUndo(.replace(old: old, index: oldIndex, new: new),
                  message: L("Replaced. Undo?", "Reemplazado. ¿Deshacer?", "已替换，可撤销"))
         save()
         play("Tink", volume: 0.35)
@@ -352,9 +346,8 @@ final class Line: ObservableObject {
         let item = items.remove(at: index)
         onFall?(item)
         hitRects[id] = nil
-        let recentID = addRecent(item)
-        pushUndo(.stow(item: item, index: index, recentID: recentID),
-                 message: L("Taken down. Undo?", "Descolgado. ¿Deshacer?", "已收起，可撤销"))
+        pushUndo(.stow(item: item, index: index),
+                 message: L("Removed; file kept. Undo?", "Quitado; archivo conservado. ¿Deshacer?", "已移除，文件保留，可撤销"))
         save()
         if !quietly { play("Pop", volume: 0.25) }
     }
@@ -370,10 +363,16 @@ final class Line: ObservableObject {
 
     func editNote(_ id: UUID) {
         guard let i = items.firstIndex(where: { $0.id == id }),
-              let current = items[i].note,
-              let updated = TextNoteEditor.prompt(
-                initial: current,
-                style: items[i].noteStyle ?? NoteStyle.from(url: items[i].url)) else { return }
+              let current = items[i].note else { return }
+        TextNoteEditor.prompt(initial: current, style: items[i].noteStyle ?? NoteStyle.from(url: items[i].url)) { [weak self] updated in
+            guard let self, let updated else { return }
+            self.updateNote(id, updated: updated)
+        }
+    }
+
+    private func updateNote(_ id: UUID, updated: TextNoteDraft) {
+        // The line can change while the non-blocking editor is open.
+        guard let i = items.firstIndex(where: { $0.id == id }) else { return }
         do {
             let oldURL = items[i].url
             var targetURL = oldURL
@@ -426,9 +425,8 @@ final class Line: ObservableObject {
         contentsOfFile: "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/dock/drag to trash.aif",
         byReference: true)
 
-    /// Whether the file lives in Tendedero's own folder. Those are discarded
-    /// to the Trash, or the folder would fill up with forgotten screenshots.
-    /// Files anywhere else, like the Desktop, stay where they are.
+    /// Whether the file lives in Tendedero's own screenshots folder.
+    /// Removing a card keeps its file, including files in this folder.
     func isInInbox(_ id: UUID) -> Bool {
         guard let item = items.first(where: { $0.id == id }) else { return false }
         return item.url.standardizedFileURL.path.hasPrefix(Inbox.folder.standardizedFileURL.path + "/")
@@ -444,8 +442,7 @@ final class Line: ObservableObject {
             try FileManager.default.moveItem(at: item.url, to: target)
             item.url = target
             items.remove(at: index)
-            let recentID = addRecent(item)
-            pushUndo(.stow(item: item, index: index, recentID: recentID),
+            pushUndo(.stow(item: item, index: index),
                      message: L("Saved and taken down. Undo?", "Guardado y descolgado. ¿Deshacer?", "已保存并收起，可撤销"))
             save()
         } catch {
@@ -483,12 +480,25 @@ final class Line: ObservableObject {
         items[i].thumb = thumb
     }
 
+    func refreshCustomStyles() {
+        for index in items.indices {
+            if let text = items[index].note, let style = items[index].noteStyle, style.custom != nil {
+                items[index].thumb = makeNoteThumbnail(text, style: style)
+            }
+        }
+        for index in pending.indices {
+            if let text = pending[index].note, let style = pending[index].noteStyle, style.custom != nil {
+                pending[index].thumb = makeNoteThumbnail(text, style: style)
+            }
+        }
+    }
+
     func reveal(_ id: UUID) {
         guard let item = items.first(where: { $0.id == id }) else { return }
         NSWorkspace.shared.activateFileViewerSelecting([item.url])
     }
 
-    // MARK: Undo and recent items
+    // MARK: Undo
 
     func undo() {
         guard let action = undoStack.popLast() else { return }
@@ -499,10 +509,9 @@ final class Line: ObservableObject {
                 guard let current = items.firstIndex(where: { $0.id == id }) else { throw CocoaError(.fileNoSuchFile) }
                 let item = items.remove(at: current)
                 items.insert(item, at: min(index, items.count))
-            case let .stow(item, index, recentID):
+            case let .stow(item, index):
                 guard FileManager.default.fileExists(atPath: item.url.path) else { throw CocoaError(.fileNoSuchFile) }
                 items.insert(item, at: min(index, items.count))
-                removeRecent(recentID)
 
             case let .delete(item, index, originalURL, trashURL):
                 guard FileManager.default.fileExists(atPath: trashURL.path) else { throw CocoaError(.fileNoSuchFile) }
@@ -516,11 +525,10 @@ final class Line: ObservableObject {
                 restored.url = restoredURL
                 items.insert(restored, at: min(index, items.count))
 
-            case let .replace(old, index, new, recentID):
+            case let .replace(old, index, new):
                 items.removeAll { $0.id == new.id }
                 pending.insert(new, at: 0)
                 items.insert(old, at: min(index, items.count))
-                removeRecent(recentID)
                 replacementPendingID = nil
             }
             save()
@@ -534,35 +542,6 @@ final class Line: ObservableObject {
             showNotice(L("Could not undo", "No se pudo deshacer", "无法撤销"), canUndo: false)
             NSSound.beep()
         }
-    }
-
-    func restoreRecent(_ id: UUID) {
-        guard let recent = recentStowed.first(where: { $0.id == id }),
-              !contains(URL(fileURLWithPath: recent.path)),
-              var item = loadItem(path: recent.path, pinned: recent.wasPinned) else { return }
-        item.flying = false
-        if liveCount < maxItems {
-            items.append(item)
-        } else {
-            pending.append(item)
-        }
-        undoStack.removeAll { action in
-            switch action {
-            case let .stow(_, _, recentID), let .replace(_, _, _, recentID):
-                return recentID == id
-            case .delete, .reorder:
-                return false
-            }
-        }
-        canUndo = !undoStack.isEmpty
-        removeRecent(id)
-        save()
-        play("Tink", volume: 0.35)
-    }
-
-    func clearRecent() {
-        recentStowed.removeAll()
-        saveRecent()
     }
 
     private func pushUndo(_ action: UndoAction, message: String) {
@@ -582,23 +561,6 @@ final class Line: ObservableObject {
         }
         noticeWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
-    }
-
-    @discardableResult
-    private func addRecent(_ item: Pegged) -> UUID {
-        let record = RecentStowed(
-            id: UUID(), path: item.url.path, date: Date(), wasPinned: item.isPinned,
-            title: item.note?.prefix(24).description ?? item.url.lastPathComponent)
-        recentStowed.removeAll { $0.path == record.path }
-        recentStowed.insert(record, at: 0)
-        pruneRecent()
-        saveRecent()
-        return record.id
-    }
-
-    private func removeRecent(_ id: UUID) {
-        recentStowed.removeAll { $0.id == id }
-        saveRecent()
     }
 
     // MARK: Breeze
@@ -638,11 +600,6 @@ final class Line: ObservableObject {
             pending = stored.compactMap { loadItem(path: $0.path, pinned: $0.isPinned) }
                 .filter { item in !items.contains(where: { $0.url == item.url }) }
         }
-        if let data = defaults.data(forKey: recentKey),
-           let stored = try? decoder.decode([RecentStowed].self, from: data) {
-            recentStowed = stored
-            pruneRecent()
-        }
         save()
     }
 
@@ -673,18 +630,6 @@ final class Line: ObservableObject {
 
     private func contains(_ url: URL) -> Bool {
         items.contains(where: { $0.url == url && !$0.falling }) || pending.contains(where: { $0.url == url })
-    }
-
-    private func pruneRecent() {
-        let cutoff = Date().addingTimeInterval(-7 * 24 * 60 * 60)
-        recentStowed = Array(recentStowed
-            .filter { $0.date >= cutoff && FileManager.default.fileExists(atPath: $0.path) }
-            .prefix(20))
-        saveRecent()
-    }
-
-    private func saveRecent() {
-        defaults.set(try? JSONEncoder().encode(recentStowed), forKey: recentKey)
     }
 
     // MARK: Helpers
@@ -837,6 +782,8 @@ private func makeLegacyNoteThumbnail(_ text: String, style: NoteStyle) -> NSImag
         shape.fill()
         textRect = NSRect(x: 24, y: 18, width: 92, height: 38)
         textColor = NSColor(calibratedRed: 0.12, green: 0.25, blue: 0.65, alpha: 1)
+    default:
+        return makeNoteThumbnail(text, style: style)
     }
 
     shape.lineWidth = 1.2

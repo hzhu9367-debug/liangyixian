@@ -3,6 +3,20 @@ import AppKit
 /// Die-cut paper notes inspired by small screen-printed stationery: a warm
 /// paper edge, restrained flat color, and subtle paper grain.
 func makeNoteThumbnail(_ text: String, style: NoteStyle) -> NSImage {
+    if style == .bucket {
+        return makeCustomNoteThumbnail(text, style: NoteStyle.bucketLayout, artwork: NoteArtworkResources.bucket, pixelScale: 4)
+    }
+    if style == .sweetbaby || style == .kissbaby, let layout = style.hangingLayout {
+        return makeCustomNoteThumbnail(text, style: layout,
+                                       artwork: style == .sweetbaby ? NoteArtworkResources.sweetbaby : NoteArtworkResources.kissbaby,
+                                       pixelScale: 4)
+    }
+    if style == .wangyibo {
+        return makeCustomNoteThumbnail(text, style: NoteStyle.wangYiboLayout, artwork: NoteArtworkResources.wangyibo, pixelScale: 4)
+    }
+    if let custom = style.custom {
+        return makeCustomNoteThumbnail(text, style: custom, artwork: CustomStyleStore.shared.image(for: custom))
+    }
     let image = NSImage(size: NSSize(width: 140, height: 104))
     image.lockFocus()
     defer { image.unlockFocus() }
@@ -40,6 +54,9 @@ func makeNoteThumbnail(_ text: String, style: NoteStyle) -> NSImage {
     case .monster:
         drawPaperMonster()
         layout = (NSRect(x: 18, y: 12, width: 104, height: 30), Paper.monsterDark)
+    default:
+        drawNoteArtwork(NoteArtworkResources.tote)
+        layout = (NSRect(x: 41, y: 30, width: 58, height: 42), Paper.ink)
     }
     let maximumFontSize: CGFloat = style == .screwdriver ? 10.5 : (style == .paperbag ? 11.5 : 13.5)
     drawNoteText(text, in: layout.0, color: layout.1, maximumFontSize: maximumFontSize)
@@ -227,6 +244,10 @@ private enum NoteArtworkResources {
     static let paperbag = load("paperbag")
     static let clock = load("clock")
     static let screwdriver = load("screwdriver")
+    static let bucket = load("bucket")
+    static let sweetbaby = load("sweetbaby")
+    static let kissbaby = load("kissbaby")
+    static let wangyibo = load("wangyibo")
 
     private static func load(_ name: String) -> NSImage? {
         // The app bundle uses standard Resources; swift run uses its resource bundle.
@@ -510,10 +531,11 @@ private func roundedRect(_ rect: NSRect, radius: CGFloat) -> NSBezierPath {
     NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
 }
 
-private func drawNoteText(_ text: String, in rect: NSRect, color: NSColor, maximumFontSize: CGFloat = 13.5) {
+func drawNoteText(_ text: String, in rect: NSRect, color: NSColor, maximumFontSize: CGFloat = 13.5,
+                  alignment: NSTextAlignment = .center) {
     let preferred = containsCJK(text) ? "Hannotate SC" : "Chalkboard SE"
     let paragraph = NSMutableParagraphStyle()
-    paragraph.alignment = .center
+    paragraph.alignment = alignment
     paragraph.lineBreakMode = .byWordWrapping
     paragraph.lineSpacing = 0.5
     var size = maximumFontSize
