@@ -47,16 +47,11 @@ struct GrabArea: NSViewRepresentable {
         }
         view.onTrash = { line.trash(id) }
         view.onDiscard = { line.stow(id) }
-        view.onTogglePin = { line.togglePinned(id) }
         view.onLongPress = { line.markup(id) }
         view.onPressChange = { pressed in line.pressedID = pressed ? id : nil }
         view.menuProvider = {
             let menu = NSMenu()
             menu.addItem(ClosureMenuItem(L("Copy", "Copiar", "复制")) { line.copy(id) })
-            menu.addItem(ClosureMenuItem(
-                item.isPinned
-                    ? L("Unpin", "Desfijar", "取消图钉")
-                    : L("Pin", "Fijar", "用图钉锁定")) { line.togglePinned(id) })
             if item.note != nil {
                 menu.addItem(ClosureMenuItem(L("Edit note", "Editar nota", "编辑便签")) { line.editNote(id) })
                 menu.addItem(.separator())
@@ -93,7 +88,6 @@ final class GrabView: NSView, NSDraggingSource {
     var onDragEnd: () -> Void = {}
     var onTrash: () -> Void = {}
     var onDiscard: () -> Void = {}
-    var onTogglePin: () -> Void = {}
     var onLongPress: () -> Void = {}
     var onPressChange: (Bool) -> Void = { _ in }
     var menuProvider: () -> NSMenu = { NSMenu() }
@@ -109,18 +103,11 @@ final class GrabView: NSView, NSDraggingSource {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    /// The take-down control drawn in the top left corner of the card. It is
+    /// The removal control drawn in the top right corner of the card. It is
     /// handled here because this view sits on top of the SwiftUI card.
     static let crossHitSize: CGFloat = 26
 
     private func isInCross(_ event: NSEvent) -> Bool {
-        let p = convert(event.locationInWindow, from: nil)
-        let corner = NSRect(x: 0, y: isFlipped ? 0 : bounds.height - Self.crossHitSize,
-                            width: Self.crossHitSize, height: Self.crossHitSize)
-        return corner.contains(p)
-    }
-
-    private func isInPin(_ event: NSEvent) -> Bool {
         let p = convert(event.locationInWindow, from: nil)
         let corner = NSRect(x: bounds.width - Self.crossHitSize,
                             y: isFlipped ? 0 : bounds.height - Self.crossHitSize,
@@ -129,11 +116,6 @@ final class GrabView: NSView, NSDraggingSource {
     }
 
     override func mouseDown(with event: NSEvent) {
-        if isInPin(event) {
-            downPoint = nil
-            onTogglePin()
-            return
-        }
         if isInCross(event) {
             downPoint = nil
             onDiscard()

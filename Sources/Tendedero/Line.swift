@@ -11,7 +11,6 @@ struct Pegged: Identifiable, Equatable {
     var thumb: NSImage
     var note: String? = nil
     var noteStyle: NoteStyle? = nil
-    var isPinned = false
     /// Every photo hangs a little crooked, like on a real line.
     let tilt = Double.random(in: -2.5...2.5)
     var falling = false
@@ -20,7 +19,7 @@ struct Pegged: Identifiable, Equatable {
 
     static func == (a: Pegged, b: Pegged) -> Bool {
         a.id == b.id && a.falling == b.falling && a.flying == b.flying
-            && a.isPinned == b.isPinned && a.thumb === b.thumb
+            && a.thumb === b.thumb
     }
 }
 
@@ -76,7 +75,6 @@ final class Line: ObservableObject {
 
     private struct StoredItem: Codable {
         let path: String
-        let isPinned: Bool
     }
 
     private enum UndoAction {
@@ -294,13 +292,6 @@ final class Line: ObservableObject {
         }
     }
 
-    func togglePinned(_ id: UUID) {
-        guard let i = items.firstIndex(where: { $0.id == id }) else { return }
-        items[i].isPinned.toggle()
-        save()
-        play("Tink", volume: 0.22)
-    }
-
     func togglePendingChoice() {
         guard let next = pending.first else { return }
         if liveCount < maxItems {
@@ -324,12 +315,6 @@ final class Line: ObservableObject {
         guard let pendingID = replacementPendingID,
               let pendingIndex = pending.firstIndex(where: { $0.id == pendingID }),
               let oldIndex = items.firstIndex(where: { $0.id == id }) else { return }
-        guard !items[oldIndex].isPinned else {
-            showNotice(L("Pinned items cannot be replaced", "Los elementos fijados no se pueden reemplazar", "已锁定的内容不能替换"), canUndo: false, seconds: 2.5)
-            NSSound.beep()
-            return
-        }
-
         let old = items[oldIndex]
         var new = pending.remove(at: pendingIndex)
         new.flying = false
@@ -579,8 +564,8 @@ final class Line: ObservableObject {
 
     private func save() {
         let encoder = JSONEncoder()
-        let onLine = items.filter { !$0.falling }.map { StoredItem(path: $0.url.path, isPinned: $0.isPinned) }
-        let waiting = pending.map { StoredItem(path: $0.url.path, isPinned: $0.isPinned) }
+        let onLine = items.filter { !$0.falling }.map { StoredItem(path: $0.url.path) }
+        let waiting = pending.map { StoredItem(path: $0.url.path) }
         defaults.set(try? encoder.encode(onLine), forKey: storeV2Key)
         defaults.set(try? encoder.encode(waiting), forKey: pendingKey)
         defaults.set(onLine.map(\.path), forKey: storeKey)
@@ -590,30 +575,30 @@ final class Line: ObservableObject {
         let decoder = JSONDecoder()
         if let data = defaults.data(forKey: storeV2Key),
            let stored = try? decoder.decode([StoredItem].self, from: data) {
-            items = stored.compactMap { loadItem(path: $0.path, pinned: $0.isPinned) }
+            items = stored.compactMap { loadItem(path: $0.path) }
         } else {
             let paths = defaults.stringArray(forKey: storeKey) ?? []
-            items = paths.compactMap { loadItem(path: $0, pinned: false) }
+            items = paths.compactMap { loadItem(path: $0) }
         }
         if let data = defaults.data(forKey: pendingKey),
            let stored = try? decoder.decode([StoredItem].self, from: data) {
-            pending = stored.compactMap { loadItem(path: $0.path, pinned: $0.isPinned) }
+            pending = stored.compactMap { loadItem(path: $0.path) }
                 .filter { item in !items.contains(where: { $0.url == item.url }) }
         }
         save()
     }
 
-    private func loadItem(path: String, pinned: Bool) -> Pegged? {
+    private func loadItem(path: String) -> Pegged? {
         guard FileManager.default.fileExists(atPath: path) else { return nil }
         let url = URL(fileURLWithPath: path)
         if url.standardizedFileURL.path.hasPrefix(Self.notesFolder.standardizedFileURL.path + "/"),
            let text = try? String(contentsOf: url, encoding: .utf8) {
             let style = NoteStyle.from(url: url)
             return Pegged(url: url, thumb: makeNoteThumbnail(text, style: style),
-                          note: text, noteStyle: style, isPinned: pinned)
+                          note: text, noteStyle: style)
         }
         guard let thumb = makeThumbnail(url) else { return nil }
-        return Pegged(url: url, thumb: thumb, isPinned: pinned)
+        return Pegged(url: url, thumb: thumb)
     }
 
     private func addNewItem(_ item: Pegged) -> Bool {

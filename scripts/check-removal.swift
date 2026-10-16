@@ -24,29 +24,37 @@ struct RemovalCheck {
             return url
         }
         let bytes = try originals.map { try Data(contentsOf: $0) }
+        // A previous version may have locked every card. Preserve their order
+        // and files while accepting the obsolete field without applying it.
+        defaults.set(try JSONSerialization.data(withJSONObject: originals.prefix(2).map {
+            ["path": $0.path, "isPinned": true] as [String: Any]
+        }), forKey: "pegged.v2")
+        defaults.set(true, forKey: "lineStaysOpen")
         let line = Line(defaults: defaults, startsBreeze: false)
         line.maxItems = 2
-        let first = line.hang(originals[0], quietly: true)!
-        let second = line.hang(originals[1], quietly: true)!
-        line.togglePinned(first)
+        precondition(line.items.map(\.url) == Array(originals.prefix(2)))
+        precondition(line.staysOpen)
+        let first = line.items[0].id
+        let second = line.items[1].id
         line.stow(first, quietly: true)
         precondition(line.items.map(\.id) == [second] && line.canUndo)
         let reloaded = Line(defaults: defaults, startsBreeze: false)
         precondition(reloaded.items.map(\.url) == [originals[1]])
         line.undo()
-        precondition(line.items.map(\.id) == [first, second] && line.items[0].isPinned)
+        precondition(line.items.map(\.id) == [first, second])
         precondition(line.hang(originals[2], quietly: true) == nil)
         line.togglePendingChoice()
         line.primaryAction(second)
         precondition(line.items[1].url == originals[2] && line.pending.isEmpty)
         line.undo()
         precondition(line.items.map(\.id) == [first, second])
-        precondition(line.items[0].isPinned && line.pending.map(\.url) == [originals[2]])
+        precondition(line.pending.map(\.url) == [originals[2]])
         for (index, url) in originals.enumerated() {
             let remainingBytes = try Data(contentsOf: url)
             precondition(remainingBytes == bytes[index], "Removal changed an original file")
         }
         precondition(defaults.data(forKey: "recentStowed.v1") == legacyHistory)
-        print("PASS: removal persists without deleting files; undo restores position and pin; replacement undo restores the queue; originals remain byte-for-byte unchanged.")
+        precondition(defaults.bool(forKey: "lineStaysOpen"))
+        print("PASS: formerly locked cards load and can be replaced; removal persists without deleting files; undo restores position and queue; originals and line display mode remain unchanged.")
     }
 }

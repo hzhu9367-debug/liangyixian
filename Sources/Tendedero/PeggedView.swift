@@ -125,7 +125,7 @@ struct PeggedView: View {
                          anchor: UnitPoint(x: Self.hangsFromHandle(item) ? 0.66 : 0.5, y: 0))
             .animation(pressed ? .easeInOut(duration: 0.45) : .spring(response: 0.3, dampingFraction: 0.6), value: pressed)
             .opacity(dragging ? 0.45 : 1)
-            .overlay(alignment: .topLeading) {
+            .overlay(alignment: .topTrailing) {
                 // Drawn here, clicked through GrabView, which sits on top.
                 Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .bold))
@@ -137,23 +137,10 @@ struct PeggedView: View {
                     .scaleEffect(hovering ? 1 : 0.6)
                     .allowsHitTesting(false)
             }
-            .overlay(alignment: .topTrailing) {
-                Image(systemName: item.isPinned ? "pin.fill" : "pin")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(item.isPinned ? Color.accentColor : .primary)
-                    .frame(width: 20, height: 20)
-                    .glassFrame(circle: true)
-                    .padding(3)
-                    .opacity((hovering || item.isPinned) && !dragging ? 1 : 0)
-                    .scaleEffect(hovering || item.isPinned ? 1 : 0.6)
-                    .allowsHitTesting(false)
-            }
             .overlay {
                 if replacing {
                     RoundedRectangle(cornerRadius: Frame.radius, style: .continuous)
-                        .stroke(item.isPinned ? Color.secondary.opacity(0.55) : Color.accentColor,
-                                style: StrokeStyle(lineWidth: item.isPinned ? 1.5 : 2.5,
-                                                   dash: item.isPinned ? [4, 4] : []))
+                        .stroke(Color.accentColor, lineWidth: 2.5)
                         .padding(-3)
                         .allowsHitTesting(false)
                 }

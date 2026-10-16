@@ -9,8 +9,8 @@
 - 小锤子与显示模式按钮随晾衣绳一起收起；顶部悬停唤出后即可使用，也可从菜单栏操作。
 - 便签工坊：导入自己的底图，调整文字区域、夹子位置、悬挂角度和文字样式。
 - 沿晾衣线拖动调整顺序，自动保存，支持撤销；拖到其他应用仍可复制。
-- 图片直接拖入、待上绳队列、图钉保护和撤销。
-- 点击叉号仅从晾衣线移除，截图仍保留在截图文件夹（拖入图片保留在原位置），便签原文件也保留；支持撤销，不再显示“最近收起”。只有明确选择“移到废纸篓”才删除文件。
+- 图片直接拖入、待上绳队列和撤销；便签及截图不再提供图钉锁定。
+- 点击右上角叉号仅从晾衣线移除，截图仍保留在截图文件夹（拖入图片保留在原位置），便签原文件也保留；支持撤销，不再显示“最近收起”。只有明确选择“移到废纸篓”才删除文件。
 - 点击小图钉选择“始终显示”或“顶部悬停显示”，模式会记住；`Option + Shift + A` 快速切换两种模式，`Option + Shift + N` 新建文字便签。
 
 仓库仅包含源码、构建脚本和界面素材，不包含个人截图、便签文字、登录凭据或编译产物。
@@ -97,8 +97,7 @@ Rest the pointer in the menu bar and it glides down. Move away and it's gone.
 | Double click | Open it in Preview. |
 | Drag into an app | Send a copy. It stays on the line. |
 | Drag into a folder | Keep it there. It leaves the line. |
-| Click the pin | Protect an item from replacement. |
-| Click × | Remove from the line while keeping its file. |
+| Click × at the top right | Remove from the line while keeping its file. |
 | Choose Move to Trash | Delete the file explicitly. |
 | Rest the pointer in the menu bar | Bring the line down on that screen. |
 | Click anything in the menu bar | Put it away. |
