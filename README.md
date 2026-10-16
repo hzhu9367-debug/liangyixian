@@ -1,6 +1,6 @@
-# 晾衣线 · 个人定制版
+# 桌面晾衣杆
 
-基于 [Alejandro Buján 的 Tendedero](https://github.com/alejandrobujan/tendedero) 修改的 macOS 桌面截图与文字便签工具。本仓库用于个人私有备份，以下原版介绍保留作来源参考，不代表本定制版的全部行为。
+基于 [Alejandro Buján 的 Tendedero](https://github.com/alejandrobujan/tendedero) 修改的 macOS 桌面截图与文字便签工具，另附独立 Windows 测试版源码。本仓库公开提供源码，无需登录 GitHub 即可浏览或下载；以下原版介绍保留作来源参考，不代表本定制版的全部行为。
 
 ## 当前定制功能
 
