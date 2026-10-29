@@ -50,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var pendingScreen: NSScreen?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        EditingMenu.install()
         let host = NSHostingView(rootView: LineView(line: line))
         host.sizingOptions = []
         panel = LinePanel(content: host)
@@ -79,6 +80,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         setUpStatusItem()
         watchMenuBarClicks()
+
+        // A note/workshop editor owns Command-Z while a key window is open.
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                DispatchQueue.main.async { self?.updateUndoHotKey() }
+            }
+        }
 
         setDisplayMode(alwaysVisible: line.staysOpen)
 
@@ -537,7 +545,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func updateUndoHotKey() {
-        let shouldListen = isRevealed && line.canUndo
+        let shouldListen = isRevealed && line.canUndo && NSApp.keyWindow == nil
         if shouldListen, undoHotKey == nil {
             undoHotKey = HotKey(keyCode: kVK_ANSI_Z, modifiers: cmdKey) { [weak self] in
                 self?.line.undo()

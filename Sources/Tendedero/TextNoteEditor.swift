@@ -119,19 +119,34 @@ struct TextNoteDraft {
     let style: NoteStyle
 }
 
-/// NSAlert creates its window lazily, and an accessory NSTextView can otherwise
-/// miss the standard paste key equivalent when the dialog was opened by a
-/// global shortcut. Keep paste local to the editor so copied text always lands
-/// in the note field.
+/// Keep a local fallback for accessory-window shortcuts and accept copied
+/// text without carrying fonts or colors from the source application.
 final class PasteAwareTextView: NSTextView {
+    override func paste(_ sender: Any?) {
+        pasteAsPlainText(sender)
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let key = event.charactersIgnoringModifiers?.lowercased()
-        if modifiers == .command, key == "v" {
+        if handlePasteShortcut(event) { return true }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if handlePasteShortcut(event) { return }
+        super.keyDown(with: event)
+    }
+
+    private func handlePasteShortcut(_ event: NSEvent) -> Bool {
+        guard window?.firstResponder === self else { return false }
+        // Ignore Caps Lock and use the physical key so Chinese input methods
+        // and keyboard layouts cannot prevent Command-V from reaching paste.
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        if event.keyCode == 9,
+           modifiers == .command || modifiers == [.command, .option, .shift] {
             paste(nil)
             return true
         }
-        return super.performKeyEquivalent(with: event)
+        return false
     }
 }
 

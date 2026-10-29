@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 
 CONFIG="${1:-release}"
 APP="build/桌面晾衣杆.app"
-VERSION="1.1.11"
+VERSION="1.1.12"
 export SWIFTPM_MODULECACHE_OVERRIDE="$PWD/.build/module-cache"
 export CLANG_MODULE_CACHE_PATH="$PWD/.build/module-cache"
 
@@ -66,7 +66,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>Tendedero</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-  <key>CFBundleVersion</key><string>13</string>
+  <key>CFBundleVersion</key><string>14</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
